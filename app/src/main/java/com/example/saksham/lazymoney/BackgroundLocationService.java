@@ -10,7 +10,6 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.location.*;
 import android.app.Service;
 import android.os.Binder;
 import android.os.Bundle;
@@ -20,12 +19,7 @@ import android.support.v4.app.ActivityCompat;
 import android.util.Log;
 import android.widget.Toast;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.text.DateFormat;
-import java.text.SimpleDateFormat;
 import java.util.Date;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -33,10 +27,9 @@ import com.google.android.gms.common.GooglePlayServicesUtil;
 import com.google.android.gms.common.api.GoogleApiClient.*;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.location.*;
-import com.google.android.gms.location.LocationListener;
 
 
-public class BackgroundLocationService extends Service implements ConnectionCallbacks, OnConnectionFailedListener, LocationListener {
+public class BackgroundLocationService extends Service implements ConnectionCallbacks, OnConnectionFailedListener {
     IBinder mBinder = new LocalBinder();
     private String TAG = "BgLocService";
     private GoogleApiClient mGoogleApiClient;
@@ -55,7 +48,13 @@ public class BackgroundLocationService extends Service implements ConnectionCall
 
     @Override
     public void onConnectionSuspended(int i) {
-
+        // Turn off the request flag
+        mInProgress = false;
+        // Destroy the current location client
+        mGoogleApiClient = null;
+        // Display the connection status
+        // Toast.makeText(this, DateFormat.getDateTimeInstance().format(new Date()) + ": Disconnected. Please re-connect.", Toast.LENGTH_SHORT).show();
+        Log.d(TAG,DateFormat.getDateTimeInstance().format(new Date()) + ": Disconnected");
     }
 
     @Override
@@ -87,7 +86,7 @@ public class BackgroundLocationService extends Service implements ConnectionCall
 
     public int onStartCommand(Intent intent, int flags, int startId) {
         super.onStartCommand(intent, flags, startId);
-
+        Log.d(TAG, "On Start");
         PowerManager mgr = (PowerManager)getSystemService(Context.POWER_SERVICE);
         /*
         WakeLock is reference counted so we don't want to create multiple WakeLocks. So do a check before initializing and acquiring.
@@ -96,16 +95,14 @@ public class BackgroundLocationService extends Service implements ConnectionCall
         if (this.mWakeLock == null) {
             this.mWakeLock = mgr.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "MyWakeLock");
         }
-
         if (!this.mWakeLock.isHeld()) {
             this.mWakeLock.acquire();
         }
-
-
         if (!servicesAvailable || mGoogleApiClient.isConnected() || mInProgress)
             return START_STICKY;
 
         buildGoogleApiClient();
+
         if (!mGoogleApiClient.isConnected() || !mGoogleApiClient.isConnecting() && !mInProgress) {
             Log.d(TAG, DateFormat.getDateTimeInstance().format(new Date()) + ": Started");
             mInProgress = true;
@@ -120,24 +117,9 @@ public class BackgroundLocationService extends Service implements ConnectionCall
      * handle callbacks.
      */
 
-    // Define the callback method that receives location updates
-    @Override
-    public void onLocationChanged(Location location) {
-        // Report to the UI that the location was updated
-        String msg = Double.toString(location.getLatitude()) + "," +
-                Double.toString(location.getLongitude());
-        Log.d("debug", msg);
-        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
-    }
-
     @Override
     public IBinder onBind(Intent intent) {
         return mBinder;
-    }
-
-    public String getTime() {
-        SimpleDateFormat mDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-        return mDateFormat.format(new Date());
     }
 
     @Override
@@ -169,10 +151,6 @@ public class BackgroundLocationService extends Service implements ConnectionCall
      */
     @Override
     public void onConnected(Bundle bundle) {
-
-        Intent intent = new Intent(this, LocationReceiver.class);
-        PendingIntent pendingIntent = PendingIntent
-                .getBroadcast(this, 54321, intent, PendingIntent.FLAG_CANCEL_CURRENT);
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             // TODO: Consider calling
             //    ActivityCompat#requestPermissions
@@ -183,23 +161,11 @@ public class BackgroundLocationService extends Service implements ConnectionCall
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
+        Intent intent = new Intent(this, LocationReceiver.class);
+        PendingIntent pendingIntent = PendingIntent
+                .getBroadcast(this, 54321, intent, PendingIntent.FLAG_CANCEL_CURRENT);
         LocationServices.FusedLocationApi.requestLocationUpdates(this.mGoogleApiClient, mLocationRequest, pendingIntent);
         Log.d(TAG, DateFormat.getDateTimeInstance().format(new Date()) + ": Connected");
-
-    }
-
-    /*
-     * Called by Location Services if the connection to the
-     * location client drops because of an error.
-     */
-    public void onDisconnected() {
-        // Turn off the request flag
-        mInProgress = false;
-        // Destroy the current location client
-        mGoogleApiClient = null;
-        // Display the connection status
-        // Toast.makeText(this, DateFormat.getDateTimeInstance().format(new Date()) + ": Disconnected. Please re-connect.", Toast.LENGTH_SHORT).show();
-        Log.d(TAG,DateFormat.getDateTimeInstance().format(new Date()) + ": Disconnected");
     }
 
     /*
@@ -209,7 +175,7 @@ public class BackgroundLocationService extends Service implements ConnectionCall
     @Override
     public void onConnectionFailed(ConnectionResult connectionResult) {
     	mInProgress = false;
-    	
+    	Log.e(TAG, "Connection Failed");
         /*
          * Google Play services can resolve some errors it detects.
          * If the error has a resolution, try sending an Intent to
@@ -225,8 +191,8 @@ public class BackgroundLocationService extends Service implements ConnectionCall
     }
 
     protected synchronized void buildGoogleApiClient() {
-        Log.i("BgLoc", "Building GoogleApiClient");
         if (this.mGoogleApiClient == null) {
+            Log.i("BgLoc", "Building GoogleApiClient");
             this.mGoogleApiClient = new GoogleApiClient.Builder(this)
                     .addConnectionCallbacks(this)
                     .addOnConnectionFailedListener(this)

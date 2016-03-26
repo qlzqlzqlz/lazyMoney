@@ -13,6 +13,7 @@ public class LocationReceiver extends BroadcastReceiver{
     private String TAG = "Loc";
     @Override
     public void onReceive(Context context, Intent intent) {
+        Log.d(TAG, "Received");
         if (LocationResult.hasResult(intent)) {
             Location location = LocationResult.extractResult(intent).getLastLocation();
             Log.d(TAG, location.toString());
